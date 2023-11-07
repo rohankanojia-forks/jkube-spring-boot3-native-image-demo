@@ -1,0 +1,47 @@
+name: MacOS Build with Maven 
+
+env:
+  MAVEN_ARGS: -B -C -V -ntp -Dhttp.keepAlive=false -e
+  JKUBE_REPOSITORY: https://github.com/eclipse/jkube.git
+  JKUBE_REVISION: master
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: MacOS Build With Maven 
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        java: [17]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup Java
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      - uses: ayltai/setup-graalvm@v1
+        with:
+          java-version: 17
+          graalvm-version: 22.3.1
+          native-image: true
+      - name: Set up Docker
+        uses: crazy-max/ghaction-setup-docker@v2
+      - name: Clone JKUBE
+        run: |
+          rm -rf jkube \
+          && git clone "$JKUBE_REPOSITORY" --branch "$JKUBE_REVISION" jkube
+      - name: Install JKube
+        run: mvn ${MAVEN_ARGS} -f "jkube/pom.xml" clean install -DskipTests -Djacoco.skip=true
+      - name: Run Integration tests
+        run: |
+          export DOCKER_HOST=unix:///Users/runner/.colima/default/docker.sock 
+          gradle clean build
+          gradle nativeCompile
+          gradle k8sBuild
+          docker run --rm demos/jkube-spring-boot3-native-image-demo:latest 
